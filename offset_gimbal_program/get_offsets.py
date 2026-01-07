@@ -25,8 +25,10 @@ def collect_data(min_num_samples,target_width_m, target_height_m, edge_margin_m,
     )
     offsets, *_ = test_setup.autofill_to_min_samples(min_samples=min_num_samples, margin_m=edge_margin_m,spot_radius_m=spot_radius_m)
 
-    test_setup.save_csv_offsets("gimbal_offsets.csv", offsets)
-    return offsets
+    np_offsets = np.array(offsets)
+    offsets_deg = np.rad2deg(np_offsets)
+    test_setup.save_csv_offsets("gimbal_offsets_deg.csv", offsets_deg)
+    return offsets_deg
     
 if __name__ == '__main__':
 
@@ -41,7 +43,7 @@ if __name__ == '__main__':
         target_width_m=1.2,
         target_height_m=1.2,
         edge_margin_m=0.02,
-        distance_m=50,
+        distance_m=200,
         azimuth_res_rad=np.deg2rad(HFOV_RES),
         elevation_res_rad=np.deg2rad(VFOV_RES),
         spot_radius_m=SPOT_RADIUS_M
