@@ -196,6 +196,34 @@ class FlatTargetHitCounter:
 
 
     # ------------------------------------------------------------
+    # Overlap checking helpers
+    # ------------------------------------------------------------
+    def _min_pairwise_dist2(self, xs, ys):
+        """Return minimum squared pairwise distance between points in xs, ys."""
+        xs = np.asarray(xs).ravel()
+        ys = np.asarray(ys).ravel()
+        n = xs.size
+        if n < 2:
+            return float('inf')
+        min_sq = float('inf')
+        for i in range(n - 1):
+            dx = xs[i+1:] - xs[i]
+            dy = ys[i+1:] - ys[i]
+            if dx.size > 0:
+                d2 = dx * dx + dy * dy
+                m = float(np.min(d2))
+                if m < min_sq:
+                    min_sq = m
+        return min_sq
+
+    def validate_no_overlap(self, xs, ys, spot_radius_m, tol=1e-12):
+        """Return (ok, min_sq, required_sq). ok True if min_sq + tol >= (2*spot_radius_m)**2."""
+        min_sq = self._min_pairwise_dist2(xs, ys)
+        required = (2.0 * float(spot_radius_m)) ** 2
+        ok = (min_sq + tol) >= required
+        return bool(ok), float(min_sq), float(required)
+
+    # ------------------------------------------------------------
     # Visualization
     # ------------------------------------------------------------
 
@@ -320,124 +348,127 @@ class FlatTargetHitCounter:
 
         return offsets, (x0, y0), (xf, yf), dphi_sub, dtheta_sub, j, i
 
-    def autofill_per_elevation(self,
-                                per_row=300,
-                                spot_radius_m=0.0,
-                                margin_m=0.0,
-                                max_subdiv=32):
-        """
-        Autofill samples per elevation row until each row has at least `per_row` samples.
+    # def autofill_per_elevation(self,
+    #                             per_row=300,
+    #                             spot_radius_m=0.0,
+    #                             margin_m=0.0,
+    #                             max_subdiv=32):
+    #     """
+    #     Autofill samples per elevation row until each row has at least `per_row` samples.
 
-        Simple implementation (sweep, azimuth-only micro-steps):
-        - For each elevation row, accepts base hits then applies symmetric azimuth offsets
-          (positive and negative) until per_row unique, non-overlapping points are collected
-          or subdivisions are exhausted.
-        - `spot_radius_m` defines the optical spot radius; any candidate point closer than
-          `2 * spot_radius_m` to an accepted point for the same row will be rejected.
+    #     Simple implementation (sweep, azimuth-only micro-steps):
+    #     - For each elevation row, accepts base hits then applies symmetric azimuth offsets
+    #       (positive and negative) until per_row unique, non-overlapping points are collected
+    #       or subdivisions are exhausted.
+    #     - `spot_radius_m` defines the optical spot radius; any candidate point closer than
+    #       `2 * spot_radius_m` to an accepted point for the same row will be rejected.
 
-        Returns
-        -------
-        rows : list[dict]
-            Each dict has keys: 'theta' (rad), 'base' (n), 'added' (n), 'total' (n),
-            'offsets' (list of dphi offsets used), 'x0', 'y0', 'xf', 'yf' (numpy arrays)
-        """
-        # Project base grid
-        X0, Y0 = self.project_to_target()
-        n_rows, n_cols = X0.shape
+    #     Returns
+    #     -------
+    #     rows : list[dict]
+    #         Each dict has keys: 'theta' (rad), 'base' (n), 'added' (n), 'total' (n),
+    #         'offsets' (list of dphi offsets used), 'x0', 'y0', 'xf', 'yf' (numpy arrays)
+    #     """
+    #     # Project base grid
+    #     X0, Y0 = self.project_to_target()
+    #     n_rows, n_cols = X0.shape
 
-        results = []
+    #     results = []
 
-        for r in range(n_rows):
-            X_row = X0[r, :]
-            Y_row = Y0[r, :]
-            # mask for points inside the (inner) rectangle
-            mask_base = self.inside_mask(X_row, Y_row, margin_m=margin_m)
-            xs_base = X_row[mask_base].ravel().tolist()
-            ys_base = Y_row[mask_base].ravel().tolist()
+    #     for r in range(n_rows):
+    #         X_row = X0[r, :]
+    #         Y_row = Y0[r, :]
+    #         # mask for points inside the (inner) rectangle
+    #         mask_base = self.inside_mask(X_row, Y_row, margin_m=margin_m)
+    #         xs_base = X_row[mask_base].ravel().tolist()
+    #         ys_base = Y_row[mask_base].ravel().tolist()
 
-            # Build accepted list enforcing minimal spacing
-            accepted_x = []
-            accepted_y = []
+    #         # Build accepted list enforcing minimal spacing
+    #         accepted_x = []
+    #         accepted_y = []
 
-            def accept_point(xp, yp):
-                if spot_radius_m <= 0.0:
-                    return True
-                min_sep2 = (2.0 * spot_radius_m) ** 2
-                for xa, ya in zip(accepted_x, accepted_y):
-                    dx = xa - xp
-                    dy = ya - yp
-                    if dx * dx + dy * dy < min_sep2:
-                        return False
-                return True
+    #         def accept_point(xp, yp):
+    #             if spot_radius_m <= 0.0:
+    #                 return True
+    #             min_sep2 = (2.0 * spot_radius_m) ** 2
+    #             for xa, ya in zip(accepted_x, accepted_y):
+    #                 dx = xa - xp
+    #                 dy = ya - yp
+    #                 if dx * dx + dy * dy < min_sep2:
+    #                     return False
+    #             return True
 
-            # accept base points in order
-            for xb, yb in zip(xs_base, ys_base):
-                if accept_point(xb, yb):
-                    accepted_x.append(xb); accepted_y.append(yb)
-                if len(accepted_x) >= per_row:
-                    break
+    #         # accept base points in order
+    #         for xb, yb in zip(xs_base, ys_base):
+    #             if accept_point(xb, yb):
+    #                 accepted_x.append(xb); accepted_y.append(yb)
+    #             if len(accepted_x) >= per_row:
+    #                 break
 
-            offsets_used = []
+    #         offsets_used = []
 
-            if len(accepted_x) < per_row:
-                # need to micro-step in azimuth only
-                base_count = max(1, len(accepted_x))
-                frames_needed = int(np.ceil(per_row / base_count))
-                n_side = int(np.ceil(np.sqrt(frames_needed)))
-                n_side = min(n_side, max_subdiv)
-                dphi_sub = self.dphi / (n_side + 1)
+    #         if len(accepted_x) < per_row:
+    #             # need to micro-step in azimuth only
+    #             base_count = max(1, len(accepted_x))
+    #             frames_needed = int(np.ceil(per_row / base_count))
+    #             n_side = int(np.ceil(np.sqrt(frames_needed)))
+    #             n_side = min(n_side, max_subdiv)
+    #             dphi_sub = self.dphi / (n_side + 1)
 
-                # symmetric offset order: 1, -1, 2, -2, ... up to n_side
-                seq = []
-                for k in range(1, n_side + 1):
-                    seq.append(k)
-                    seq.append(-k)
+    #             # symmetric offset order: 1, -1, 2, -2, ... up to n_side
+    #             seq = []
+    #             for k in range(1, n_side + 1):
+    #                 seq.append(k)
+    #                 seq.append(-k)
 
-                for i_off in seq:
-                    dphi = i_off * dphi_sub
-                    # project with dphi offset and extract same row
-                    X_off, Y_off = self.project_to_target(dphi_offset=dphi)
-                    Xr = X_off[r, :]
-                    Yr = Y_off[r, :]
-                    mask = self.inside_mask(Xr, Yr, margin_m=margin_m)
-                    xs = Xr[mask].ravel().tolist()
-                    ys = Yr[mask].ravel().tolist()
+    #             for i_off in seq:
+    #                 dphi = i_off * dphi_sub
+    #                 # project with dphi offset and extract same row
+    #                 X_off, Y_off = self.project_to_target(dphi_offset=dphi)
+    #                 Xr = X_off[r, :]
+    #                 Yr = Y_off[r, :]
+    #                 mask = self.inside_mask(Xr, Yr, margin_m=margin_m)
+    #                 xs = Xr[mask].ravel().tolist()
+    #                 ys = Yr[mask].ravel().tolist()
 
-                    added_this_offset = 0
-                    for xc, yc in zip(xs, ys):
-                        if accept_point(xc, yc):
-                            accepted_x.append(xc); accepted_y.append(yc); added_this_offset += 1
-                            if len(accepted_x) >= per_row:
-                                break
-                    if added_this_offset > 0:
-                        offsets_used.append((dphi, added_this_offset))
-                    if len(accepted_x) >= per_row:
-                        break
+    #                 added_this_offset = 0
+    #                 for xc, yc in zip(xs, ys):
+    #                     if accept_point(xc, yc):
+    #                         accepted_x.append(xc); accepted_y.append(yc); added_this_offset += 1
+    #                         if len(accepted_x) >= per_row:
+    #                             break
+    #                 if added_this_offset > 0:
+    #                     offsets_used.append((dphi, added_this_offset))
+    #                 if len(accepted_x) >= per_row:
+    #                     break
 
-            results.append({
-                'theta': float(self.elevation_angles()[r]),
-                'base': len(xs_base),
-                'added': max(0, len(accepted_x) - len(xs_base)),
-                'total': len(accepted_x),
-                'offsets': offsets_used,
-                'x0': np.array(xs_base),
-                'y0': np.array(ys_base),
-                'xf': np.array(accepted_x[len(xs_base):]),
-                'yf': np.array(accepted_y[len(xs_base):]),
-            })
+    #         results.append({
+    #             'theta': float(self.elevation_angles()[r]),
+    #             'base': len(xs_base),
+    #             'added': max(0, len(accepted_x) - len(xs_base)),
+    #             'total': len(accepted_x),
+    #             'offsets': offsets_used,
+    #             'x0': np.array(xs_base),
+    #             'y0': np.array(ys_base),
+    #             'xf': np.array(accepted_x[len(xs_base):]),
+    #             'yf': np.array(accepted_y[len(xs_base):]),
+    #         })
 
-        return results
+    #     return results
 
 
 if __name__ == '__main__':
     import pandas as pd
     
     # do HFOV as both 120 deg and 45 deg
-    HFOV = 120
+    HFOV = 45
     VFOV = 30
     
     TARGET_WIDTH = 1.2
     TARGET_HEIGHT = 1.2
+    SPOT_DIAMETER_M= 0.0135
+    SPOT_RADIUS = SPOT_DIAMETER_M / 2  # What is this actual value?
+
     
     TARGET_DISTANCE_LIST = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # TARGET_DISTANCE_LIST = [30]
@@ -462,11 +493,23 @@ if __name__ == '__main__':
         
         sampler.plot_single_frame(margin_m=0.02)
 
-        offsets, p0, p_ext, dphi_sub, dtheta_sub, j, i = sampler.plot_autofilled(min_samples=300, margin_m=0.02)
+        offsets, p0, p_ext, dphi_sub, dtheta_sub, j, i = sampler.plot_autofilled(min_samples=300, margin_m=0.02, spot_radius_m=SPOT_RADIUS)
         num_of_gimbal_steps = len(offsets)
         num_of_points_with_gimbal_stepping = len(p0[0]) + len(p_ext[0])
         print('Number of Gimbal Steps (to reach 300 points)', num_of_gimbal_steps)
         print('Number of points post gimbal stepping', num_of_points_with_gimbal_stepping)
+
+        # Optional: validate no overlap for all accepted points (disabled by default)
+        run_overlap_check = True
+        if run_overlap_check:
+            all_x = np.concatenate([p0[0], p_ext[0]])
+            all_y = np.concatenate([p0[1], p_ext[1]])
+            ok, min_sq, required_sq = sampler.validate_no_overlap(all_x, all_y, SPOT_RADIUS)
+            if not ok:
+                print(f"ERROR: Overlap detected! min_dist={np.sqrt(min_sq):.6f} m, required >= {np.sqrt(required_sq):.6f} m")
+                raise AssertionError("Overlap detected in sampling for spot_radius_m={}".format(SPOT_RADIUS))
+            else:
+                print(f"No overlap: min_dist={np.sqrt(min_sq):.6f} m, required >= {np.sqrt(required_sq):.6f} m")
         
         num_of_az_steps = len(set([item[0] for item in offsets]))
     
