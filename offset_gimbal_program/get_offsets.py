@@ -13,7 +13,8 @@ Parameters:
     distance_m: Distance to the target in meters.
     azimuth_res_rad: Azimuth resolution in radians. (system defined)
     elevation_res_rad: Elevation resolution in radians. (system defined)
-    spot_radius_m: Radius of the spot to consider for hits in meters. (system defined)
+    spot_radius_m: Radius of the spot to consider for hits in meters. (system defined)I dont think this is used in the current implementation
+Returns:
 """
 def collect_data(min_num_samples,target_width_m, target_height_m, edge_margin_m, distance_m, azimuth_res_rad, elevation_res_rad, spot_radius_m):
     test_setup = FlatTargetHitCounter(
