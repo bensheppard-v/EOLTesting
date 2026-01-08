@@ -18,28 +18,26 @@ ELEVATION_RES_RAD = np.radians(30) / 127    # ~0.0041 rad
 
 def compute_calibration_offset(counter):
     """
-    Compute gimbal offset to align HIGHEST beam of sensor with TOP edge of target.
+    Compute gimbal offset to align HIGHEST beam (channel 0) with TOP of target.
     
-    Beam numbering (from linspace):
-    - Beam 0 (channel 0): LOWEST angle (theta0 - theta_half = -15°)
-    - Beam 127 (channel 7): HIGHEST angle (theta0 + theta_half = +15°)
+    This enables unidirectional UPWARD stepping:
+    - At calibration: Channel 0 hits top of target
+    - Step UP: Channel 0 moves above target, channels 1, 2, 3... come into view
     
-    We want beam 127 (the highest angle) to graze the top edge of target.
+    Beam 127 (channel 0) has highest angle (+15° native).
     
     Returns (dphi_calib, dtheta_calib) in radians.
     """
-    # Angle from sensor to top edge of target (sensor at center height)
+    # Angle from sensor to TOP edge of target
     angle_to_top_of_target = np.arctan((counter.H / 2 - counter.sensor_height_offset_m) / counter.D)
     
-    # The highest beam (beam 127) is at: theta0 + theta_half (in sensor's native frame)
-    # We need to TILT the sensor so this beam points at angle_to_top_of_target
+    # The highest beam (beam 127, channel 0) is at: theta0 + theta_half
     _, theta_half = counter._angular_limits()
     highest_beam_native_angle = counter.theta0 + theta_half  # e.g., 0 + 15° = 15°
     
-    # Offset needed: angle_to_top_of_target - highest_beam_native_angle
-    # Since target top (3.7°) < native angle (15°), we tilt DOWN (negative)
+    # Tilt so highest beam points at TOP of target
     dtheta_calib = angle_to_top_of_target - highest_beam_native_angle
-    dphi_calib = 0.0  # No horizontal offset needed
+    dphi_calib = 0.0
     
     return dphi_calib, dtheta_calib
 

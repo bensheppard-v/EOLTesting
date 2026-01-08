@@ -616,11 +616,9 @@ class FlatTargetHitCounter:
         print(f"DEBUG: elev_visible={elevations_visible:.1f}, azi_visible={azimuths_visible:.1f}, macro_step={np.degrees(macro_step_size):.2f}°, steps_needed={steps_needed}, elev_micro={n_elev_micro_macro}, azi_micro={n_azi_micro_macro}")
         import sys; sys.stdout.flush()
         
-        # At calibration, channels 0-1 are visible (top of target).
-        # Need to explore BOTH directions since only middle is initially visible:
-        # - Step DOWN (-) to bring lower beam indices (higher channels) onto target  
-        # - Step UP (+) may be needed depending on initial coverage
-        # Bidirectional ensures we don't miss any channels due to geometry.
+        # Calibration aligns channel 0 (highest beams) with TOP of target.
+        # Step UPWARD (+) so channel 0 moves above target, bringing channels 1→2→...→7 into view.
+        # Unidirectional stepping is sufficient!
         
         # Recalculate micro step sizes for macro loop
         dtheta_micro_macro = max_elevation_offset / max(1, n_elev_micro_macro)
@@ -629,38 +627,36 @@ class FlatTargetHitCounter:
         consecutive_empty_macrosteps = 0
         
         for macro_step in range(1, max_coarse_steps + 1):
-            # Try both directions each iteration
-            for direction_sign in [+1, -1]:
-                dtheta_macro = direction_sign * macro_step * macro_step_size
-                
-                # Track if this macro step added anything
-                macro_added = 0
-                
-                # At this macro position, do microstepping
-                for j in range(n_elev_micro_macro + 1):
-                    for i in range(-n_azi_micro_macro, n_azi_micro_macro + 1):
-                        dtheta_total = dtheta_macro + j * dtheta_micro_macro
-                        dphi = i * dphi_micro_macro
-                        
-                        added = _process_frame(dphi, dtheta_total)
-                        if added > 0:
-                            offsets.append((dphi, dtheta_total))
-                            macro_added += added
-                        
-                        # Check after every frame
-                        if _all_bins_satisfied():
-                            return self._build_return(offsets, samples, counts, all_channels)
-                
-                # Count empty steps
-                if macro_added == 0:
-                    consecutive_empty_macrosteps += 1
-                    # Stop early if we've had too many consecutive empty steps
-                    if consecutive_empty_macrosteps >= max_empty_macrosteps * 2:  # *2 since doing 2 directions
-                        print(f"DEBUG: Stopping at macro_step {macro_step} - no progress for {consecutive_empty_macrosteps} steps")
-                        import sys; sys.stdout.flush()
+            # Step UPWARD (positive direction) from calibration
+            dtheta_macro = macro_step * macro_step_size
+            
+            # Track if this macro step added anything
+            macro_added = 0
+            
+            # At this macro position, do microstepping
+            for j in range(n_elev_micro_macro + 1):
+                for i in range(-n_azi_micro_macro, n_azi_micro_macro + 1):
+                    dtheta_total = dtheta_macro + j * dtheta_micro_macro
+                    dphi = i * dphi_micro_macro
+                    
+                    added = _process_frame(dphi, dtheta_total)
+                    if added > 0:
+                        offsets.append((dphi, dtheta_total))
+                        macro_added += added
+                    
+                    # Check after every frame
+                    if _all_bins_satisfied():
                         return self._build_return(offsets, samples, counts, all_channels)
-                else:
-                    consecutive_empty_macrosteps = 0  # Reset counter when we make progress
+            
+            # Check for progress
+            if macro_added == 0:
+                consecutive_empty_macrosteps += 1
+                if consecutive_empty_macrosteps >= max_empty_macrosteps:
+                    print(f"DEBUG: Stopping at macro_step {macro_step} - no progress for {consecutive_empty_macrosteps} steps")
+                    import sys; sys.stdout.flush()
+                    break
+            else:
+                consecutive_empty_macrosteps = 0  # Reset counter when we make progress
         
         # Reached max iterations without fully satisfying all bins
         return self._build_return(offsets, samples, counts, all_channels)
