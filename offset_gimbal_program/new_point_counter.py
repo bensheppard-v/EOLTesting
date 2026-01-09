@@ -25,7 +25,7 @@ class Test_Setup:
         self.num_azimuth_beams = num_azimuth_beams
         self.num_elevation_beams = num_elevation_beams
         self.azimuth_res_rad = np.radians(45) / (num_azimuth_beams - 1)
-        self.elevation_res_rad = np.radians(30) / (num_elevation_beams - 1)
+        self.elevation_res_rad = np.radians(22.5) / (num_elevation_beams - 1)
         self.samp_per_channel = samp_per_channel
         self.buffer_m = buffer_m
         self.spot_diameter_m = spot_diameter_m
@@ -33,7 +33,7 @@ class Test_Setup:
         
         # Sensor FOV parameters
         self.hfov_rad = np.radians(45.0)  # 45° horizontal FOV
-        self.vfov_rad = np.radians(30.0)  # 30° vertical FOV
+        self.vfov_rad = np.radians(22.5)  # 22.5° vertical FOV
         self.theta0 = 0.0  # Uncalibrated center elevation angle (radians)
 
         # Gimbal calibration offsets (will be set manually for each distance test)
@@ -123,133 +123,51 @@ class Test_Setup:
         
         return n_azimuth, n_elevation
     
-    def calculate_microsteps_needed(self, v_offset_rel=0.0, samples_per_elevation=19):
+    def microstep_case1(self):
         """
-        Calculate how many horizontal microsteps are needed to achieve target samples per elevation.
-        
-        Parameters
-        ----------
-        v_offset_rel : float
-            Vertical offset (radians) relative to calibration
-        samples_per_elevation : int
-            Desired number of samples per elevation beam (default: 19)
-        
-        Returns
-        -------
-        n_microsteps : int
-            Number of microstep positions needed (including initial position)
-        
-        Notes
-        -----
-        Accounts for beams entering/exiting as we microstep by checking beam count
-        at multiple positions and summing actual samples collected.
-        Microsteps are always 1/32 of azimuth_res_rad apart.
+          Case 1: n_vertical >= 16 (full channel visible)
+        Should microstep until samp_per_channel is reached
+
         """
-        microstep_size = self.azimuth_res_rad / 32.0
-        
-        # Start with initial estimate
-        n_azimuth_initial, _ = self.count_beams_on_target(0.0, v_offset_rel)
-        
-        if n_azimuth_initial <= 0:
-            return 1  # At least one position even if no beams hit
-        
-        # Iteratively check if we have enough samples
-        for n_microsteps in range(1, 50):  # Reasonable upper limit
-            total_samples = 0
-            for i in range(n_microsteps):
-                h_offset = i * microstep_size
-                n_azimuth, _ = self.count_beams_on_target(h_offset, v_offset_rel)
-                total_samples += n_azimuth
-            
-            if total_samples >= samples_per_elevation:
-                return n_microsteps
-        
-        # Fallback: use initial estimate if loop doesn't converge
-        return int(np.ceil(samples_per_elevation / n_azimuth_initial))
-    
-    def generate_microstep_positions(self, n_microsteps, v_offset_rel):
+
+    def run_test(self):
         """
-        Generate list of (h_offset, v_offset) positions for microstepping.
-        
-        Parameters
-        ----------
-        n_microsteps : int
-            Number of microstep positions to generate
-        v_offset_rel : float
-            Vertical offset (radians) relative to calibration
-        
-        Returns
-        -------
-        positions : list of tuples
-            List of (h_offset_rad, v_offset_rad) positions
-        
-        Notes
-        -----
-        Microsteps are always 1/32 of azimuth_res_rad apart horizontally.
-        First position is always at h_offset = 0.0.
+        Run the test procedure following the pseudocode.
+        For now: simplified microstepping (one step to the right).
+        Returns list of gimbal positions visited.
         """
-        microstep_size = self.azimuth_res_rad / 32.0
-        positions = []
+        # Store initial calibration
+        initial_h_offset = self.gimbal_h_offset_rad
+        initial_v_offset = self.gimbal_v_offset_rad
         
-        for i in range(n_microsteps):
-            h_offset = i * microstep_size
-            positions.append((h_offset, v_offset_rel))
-        
-        return positions
-    
-    def run_test(self, samples_per_elevation=19):
-        """
-        Run the test procedure with automatic microstepping.
-        
-        Parameters
-        ----------
-        samples_per_elevation : int
-            Target number of samples per elevation beam (default: 19)
-        
-        Returns
-        -------
-        positions : list of tuples
-            List of (h_offset_rad, v_offset_rad) gimbal positions visited
-        """
-        # Count beams at calibration
-        n_azimuth, n_vertical = self.count_beams_on_target(0, 0)
-        print(f"Starting test at calibration:")
-        print(f"  Horizontal beams: {n_azimuth}")
-        print(f"  Vertical beams: {n_vertical}")
-        
-        # Calculate microsteps needed (will check beam count at each position)
-        n_microsteps = self.calculate_microsteps_needed(0.0, samples_per_elevation)
-        
-        # Calculate actual samples that will be collected
-        microstep_size = self.azimuth_res_rad / 32.0
-        total_samples = sum([self.count_beams_on_target(i * microstep_size, 0.0)[0] for i in range(n_microsteps)])
-        
-        print(f"  Microsteps per position: {n_microsteps}")
-        print(f"  Samples per elevation: {total_samples}\n")
+        # Count vertical beams at calibration
+        _, n_vertical = self.count_beams_on_target(0, 0)
+        print(f"Starting test at calibration: {n_vertical} vertical beams visible")
         
         # Track all positions visited
         positions = []
+        # Current relative offset from calibration
         current_v_rel = 0.0  # Vertical offset relative to calibration
         
         if n_vertical >= 16:
             print("Case: n_vertical >= 16 (full channel visible)")
+            
+            # Calculate how many microsteps needed so one elevation gets 19 samples
+            # Count azimuth beams hitting at calibration position
+            n_azimuth, _ = self.count_beams_on_target(0, 0)
+            # Need 19 samples per elevation, each position gives n_azimuth samples per elevation
+            microsteps_needed = max(1, int(np.ceil(self.samp_per_channel / 16 / n_azimuth)))
+            print(f"Azimuth beams per position: {n_azimuth}, Microsteps needed: {microsteps_needed} (to get {self.samp_per_channel / 16:.0f} samples per elevation)")
+            
             # Full channel visible at once
             for channel in range(8):
                 print(f"\nChannel {channel}:")
                 
-                # Recalculate microsteps for this specific v_offset (beam count may vary)
-                n_microsteps_ch = self.calculate_microsteps_needed(current_v_rel, samples_per_elevation)
-                
-                # Generate microstep positions for this channel
-                channel_positions = self.generate_microstep_positions(n_microsteps_ch, current_v_rel)
-                positions.extend(channel_positions)
-                
-                # Calculate actual samples for this channel
-                total_samples_ch = sum([self.count_beams_on_target(i * microstep_size, current_v_rel)[0] 
-                                       for i in range(n_microsteps_ch)])
-                
-                print(f"  Added {len(channel_positions)} positions at v_offset={np.degrees(current_v_rel):.3f}°")
-                print(f"  Total samples for this channel: {total_samples_ch}")
+                # Multiple microsteps at this channel position
+                for step in range(microsteps_needed):
+                    h_offset = step * self.azimuth_res_rad / 20.0
+                    print(f"  Position {step}: v_offset={np.degrees(current_v_rel):.3f}°, h_offset={np.degrees(h_offset):.3f}°")
+                    positions.append((h_offset, current_v_rel))
                 
                 # Macrostep UP by 16 elevations (except after last channel)
                 if channel < 7:
@@ -261,47 +179,51 @@ class Test_Setup:
             print(f"Case: n_vertical < 16 (partial channel visible)")
             # Partial channel visible - need subdivisions
             subdivisions_needed = int(np.ceil(16 / n_vertical))
-            print(f"Subdivisions per channel: {subdivisions_needed}")
+            # Calculate microsteps needed: 19 samples per elevation line
+            # Count azimuth beams hitting at calibration
+            n_azimuth, _ = self.count_beams_on_target(0, 0)
+            samples_per_elevation = self.samp_per_channel / 16  # 300/16 = 18.75 ≈ 19
+            microsteps_per_subdivision = max(1, int(np.ceil(samples_per_elevation / n_azimuth)))
+            print(f"Azimuth beams per position: {n_azimuth}, Microsteps per subdivision: {microsteps_per_subdivision} (to get {samples_per_elevation:.0f} samples per elevation)")
             
             for channel in range(8):
                 print(f"\nChannel {channel}:")
                 
                 for sub in range(subdivisions_needed):
-                    # Calculate elevations visible at this subdivision
+                    # Apply small vertical offset between subdivisions within channel
+                    # This prevents same elevations from landing on same spots
+                    v_offset_adjustment = sub * self.elevation_res_rad / 64
+                    current_position_v = current_v_rel + v_offset_adjustment
+                    
+                    # Count how many elevations are ACTUALLY visible at this position
+                    elevations_visible, _ = self.count_beams_on_target(0, current_position_v)
+                    
+                    print(f"  Subdivision {sub}: {elevations_visible} elevations visible at v_offset={np.degrees(current_position_v):.3f}°")
+                    
+                    # Multiple microsteps to reach sample target
+                    for step in range(microsteps_per_subdivision):
+                        h_offset = step * self.azimuth_res_rad / 20.0
+                        print(f"    Position {step}: v_offset={np.degrees(current_position_v):.3f}°, h_offset={np.degrees(h_offset):.3f}°")
+                        positions.append((h_offset, current_position_v))
+                    
+                    # Macrostep UP - overlap by 1 elevation to avoid losing samples at edges
                     if sub < subdivisions_needed - 1:
-                        elevations_visible = n_vertical
-                    else:
-                        elevations_visible = 16 - (n_vertical * (subdivisions_needed - 1))
-                    
-                    print(f"  Subdivision {sub}: {elevations_visible} elevations visible")
-                    
-                    # Recalculate microsteps for this specific position
-                    n_microsteps_sub = self.calculate_microsteps_needed(current_v_rel, samples_per_elevation)
-                    
-                    # Generate microstep positions for this subdivision
-                    subdivision_positions = self.generate_microstep_positions(n_microsteps_sub, current_v_rel)
-                    positions.extend(subdivision_positions)
-                    
-                    # Calculate actual samples for this subdivision
-                    total_samples_sub = sum([self.count_beams_on_target(i * microstep_size, current_v_rel)[0] 
-                                            for i in range(n_microsteps_sub)])
-                    
-                    print(f"    Added {len(subdivision_positions)} positions at v_offset={np.degrees(current_v_rel):.3f}°")
-                    print(f"    Total samples for this subdivision: {total_samples_sub}")
-                    
-                    # Macrostep UP
-                    if sub < subdivisions_needed - 1:
-                        # Not last subdivision - step by n_vertical
-                        macrostep_size = n_vertical * self.elevation_res_rad
+                        # Within channel: step by (elevations_visible - 1) to create overlap
+                        # But if only 1 elevation, can't create overlap - just step by 1
+                        overlap_step = max(1, elevations_visible - 1)
+                        macrostep_size = overlap_step * self.elevation_res_rad
                         current_v_rel += macrostep_size
-                        print(f"    Macrostep UP by {n_vertical} elevations (+{np.degrees(macrostep_size):.3f}°)")
+                        if overlap_step < elevations_visible:
+                            print(f"    Macrostep UP by {overlap_step} elevations (+{np.degrees(macrostep_size):.3f}°) [1 elevation overlap]")
+                        else:
+                            print(f"    Macrostep UP by {overlap_step} elevations (+{np.degrees(macrostep_size):.3f}°)")
                     elif channel < 7:
-                        # Last subdivision but not last channel - step by remaining elevations
+                        # Between channels: step by full elevations_visible to align next channel
                         macrostep_size = elevations_visible * self.elevation_res_rad
                         current_v_rel += macrostep_size
-                        print(f"    Macrostep UP by {elevations_visible} elevations (+{np.degrees(macrostep_size):.3f}°)")
+                        print(f"    Macrostep UP by {elevations_visible} elevations to next channel (+{np.degrees(macrostep_size):.3f}°)")
         
-        print(f"\n✓ Test complete! Visited {len(positions)} positions")
+        print(f"\nTest complete! Visited {len(positions)} positions")
         return positions
 
     # Test procedure

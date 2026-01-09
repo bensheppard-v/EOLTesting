@@ -13,7 +13,7 @@ def lighten_color(color, amount=0.5):
     return tuple(rgb[i] + (1 - rgb[i]) * amount for i in range(3))
 
 # Test at multiple distances
-test_distances = [5, 10, 15, 20, 30]
+test_distances = [5, 10, 50, 70, 100, 150]
 
 # Channel colors (8 distinct colors)
 channel_colors = ['#e41a1c', '#377eb8', '#4daf4a', "#91499c", '#ff7f00', '#ffff33', '#a65628', "#af5083"]
@@ -32,7 +32,7 @@ for distance_m in test_distances:
         sensor_width_offset_m=0.0,
         num_azimuth_beams=181,
         num_elevation_beams=128,
-        samp_per_channel=300,
+        samp_per_channel=400,
         buffer_m=0.01,
         spot_diameter_m=0.0135  # 1.35cm diameter
     )
@@ -151,10 +151,9 @@ for distance_m in test_distances:
                               zorder=2,
                               label=label)
         
-        # Plot stepped position at this v_offset
+        # Plot stepped positions at this v_offset
         stepped_at_v = [h for h, v in stepped_positions if v == v_offset]
-        if stepped_at_v:
-            h_offset = stepped_at_v[0]
+        for h_offset in stepped_at_v:
             
             phis = setup.azimuth_angles(h_offset)
             thetas = setup.elevation_angles(setup.gimbal_v_offset_rad + v_offset)
