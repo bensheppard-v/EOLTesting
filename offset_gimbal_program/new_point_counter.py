@@ -122,6 +122,23 @@ class Test_Setup:
         n_elevation = int(np.sum(elevation_hits))
         
         return n_azimuth, n_elevation
+
+    def _microsteps_needed(self, n_azimuth, elevations_visible):
+        """Return microsteps so each elevation contributes its sample share."""
+        if n_azimuth <= 0 or elevations_visible <= 0:
+            return 0
+        samples_needed = (elevations_visible / 16.0) * self.samp_per_channel
+        samples_per_microstep = n_azimuth * elevations_visible
+        steps = int(np.ceil(samples_needed / samples_per_microstep))
+        return max(1, steps)
+
+    def _microstep_offsets(self, steps):
+        """Return symmetric azimuth offsets for microstepping."""
+        if steps <= 1:
+            return [0.0]
+        step_size = self.azimuth_res_rad / 20.0
+        center = (steps - 1) / 2.0
+        return [(idx - center) * step_size for idx in range(steps)]
     
     def microstep_case1(self):
         """
@@ -140,8 +157,11 @@ class Test_Setup:
         initial_h_offset = self.gimbal_h_offset_rad
         initial_v_offset = self.gimbal_v_offset_rad
         
-        # Count vertical beams at calibration
+        # Count beams at calibration
         _, n_vertical = self.count_beams_on_target(0, 0)
+        if n_vertical == 0:
+            print("No vertical beams on target at calibration. Abort test.")
+            return []
         print(f"Starting test at calibration: {n_vertical} vertical beams visible")
         
         # Track all positions visited
@@ -152,22 +172,25 @@ class Test_Setup:
         if n_vertical >= 16:
             print("Case: n_vertical >= 16 (full channel visible)")
             
-            # Calculate how many microsteps needed so one elevation gets 19 samples
-            # Count azimuth beams hitting at calibration position
-            n_azimuth, _ = self.count_beams_on_target(0, 0)
-            # Need 19 samples per elevation, each position gives n_azimuth samples per elevation
-            microsteps_needed = max(1, int(np.ceil(self.samp_per_channel / 16 / n_azimuth)))
-            print(f"Azimuth beams per position: {n_azimuth}, Microsteps needed: {microsteps_needed} (to get {self.samp_per_channel / 16:.0f} samples per elevation)")
-            
             # Full channel visible at once
             for channel in range(8):
                 print(f"\nChannel {channel}:")
+                current_position_v = current_v_rel
+                n_azimuth, n_elevation = self.count_beams_on_target(0, current_position_v)
+                elevations_visible = min(16, n_elevation)
+                microsteps_needed = self._microsteps_needed(n_azimuth, elevations_visible)
+                if microsteps_needed == 0:
+                    print("  Warning: no beams on target at this pose. Skipping channel.")
+                    continue
+                print(
+                    f"  Azimuth beams: {n_azimuth}, elevations visible: {elevations_visible},"
+                    f" microsteps: {microsteps_needed}"
+                )
                 
                 # Multiple microsteps at this channel position
-                for step in range(microsteps_needed):
-                    h_offset = step * self.azimuth_res_rad / 20.0
-                    print(f"  Position {step}: v_offset={np.degrees(current_v_rel):.3f}°, h_offset={np.degrees(h_offset):.3f}°")
-                    positions.append((h_offset, current_v_rel))
+                for step, h_offset in enumerate(self._microstep_offsets(microsteps_needed)):
+                    print(f"  Position {step}: v_offset={np.degrees(current_position_v):.3f}°, h_offset={np.degrees(h_offset):.3f}°")
+                    positions.append((h_offset, current_position_v))
                 
                 # Macrostep UP by 16 elevations (except after last channel)
                 if channel < 7:
@@ -179,49 +202,67 @@ class Test_Setup:
             print(f"Case: n_vertical < 16 (partial channel visible)")
             # Partial channel visible - need subdivisions
             subdivisions_needed = int(np.ceil(16 / n_vertical))
-            # Calculate microsteps needed: 19 samples per elevation line
-            # Count azimuth beams hitting at calibration
-            n_azimuth, _ = self.count_beams_on_target(0, 0)
-            samples_per_elevation = self.samp_per_channel / 16  # 300/16 = 18.75 ≈ 19
-            microsteps_per_subdivision = max(1, int(np.ceil(samples_per_elevation / n_azimuth)))
-            print(f"Azimuth beams per position: {n_azimuth}, Microsteps per subdivision: {microsteps_per_subdivision} (to get {samples_per_elevation:.0f} samples per elevation)")
+            print(
+                f"  Subdividing each channel into {subdivisions_needed} chunks (n_vertical={n_vertical})"
+            )
             
             for channel in range(8):
                 print(f"\nChannel {channel}:")
+                channel_start_v = current_v_rel
+                offset_applications = 0
+                sub_start_index = 0
                 
                 for sub in range(subdivisions_needed):
-                    # Apply small vertical offset between subdivisions within channel
-                    # This prevents same elevations from landing on same spots
-                    v_offset_adjustment = sub * self.elevation_res_rad / 64
-                    current_position_v = current_v_rel + v_offset_adjustment
-                    
-                    # Count how many elevations are ACTUALLY visible at this position
-                    elevations_visible, _ = self.count_beams_on_target(0, current_position_v)
-                    
-                    print(f"  Subdivision {sub}: {elevations_visible} elevations visible at v_offset={np.degrees(current_position_v):.3f}°")
-                    
-                    # Multiple microsteps to reach sample target
-                    for step in range(microsteps_per_subdivision):
-                        h_offset = step * self.azimuth_res_rad / 20.0
-                        print(f"    Position {step}: v_offset={np.degrees(current_position_v):.3f}°, h_offset={np.degrees(h_offset):.3f}°")
-                        positions.append((h_offset, current_position_v))
-                    
-                    # Macrostep UP - overlap by 1 elevation to avoid losing samples at edges
+                    # Determine how many elevations this subdivision should cover
                     if sub < subdivisions_needed - 1:
-                        # Within channel: step by (elevations_visible - 1) to create overlap
-                        # But if only 1 elevation, can't create overlap - just step by 1
+                        target_elevations = n_vertical
+                    else:
+                        remaining = 16 - sub_start_index
+                        target_elevations = max(1, remaining)
+
+                    base_position_v = channel_start_v + sub_start_index * self.elevation_res_rad
+                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0)
+                    current_position_v = base_position_v + vertical_offset
+
+                    # Count how many beams are actually visible
+                    n_azimuth, actual_elevations = self.count_beams_on_target(0, current_position_v)
+                    elevations_visible = min(target_elevations, actual_elevations)
+                    if elevations_visible <= 0 or n_azimuth <= 0:
+                        print(
+                            f"  Subdivision {sub}: no beams on target (v_offset={np.degrees(current_position_v):.3f}°). Skipping."
+                        )
+                        continue
+
+                    microsteps_needed = self._microsteps_needed(n_azimuth, elevations_visible)
+                    print(
+                        f"  Subdivision {sub}: {elevations_visible} elevations, {n_azimuth} az beams,"
+                        f" microsteps {microsteps_needed} at v_offset={np.degrees(current_position_v):.3f}°"
+                    )
+
+                    for step, h_offset in enumerate(self._microstep_offsets(microsteps_needed)):
+                        print(
+                            f"    Position {step}: v_offset={np.degrees(current_position_v):.3f}°,"
+                            f" h_offset={np.degrees(h_offset):.3f}°"
+                        )
+                        positions.append((h_offset, current_position_v))
+
+                    if sub < subdivisions_needed - 1:
                         overlap_step = max(1, elevations_visible - 1)
-                        macrostep_size = overlap_step * self.elevation_res_rad
-                        current_v_rel += macrostep_size
-                        if overlap_step < elevations_visible:
-                            print(f"    Macrostep UP by {overlap_step} elevations (+{np.degrees(macrostep_size):.3f}°) [1 elevation overlap]")
-                        else:
-                            print(f"    Macrostep UP by {overlap_step} elevations (+{np.degrees(macrostep_size):.3f}°)")
-                    elif channel < 7:
-                        # Between channels: step by full elevations_visible to align next channel
-                        macrostep_size = elevations_visible * self.elevation_res_rad
-                        current_v_rel += macrostep_size
-                        print(f"    Macrostep UP by {elevations_visible} elevations to next channel (+{np.degrees(macrostep_size):.3f}°)")
+                        sub_start_index += overlap_step
+                        sub_start_index = min(sub_start_index, 16)
+                        offset_applications += 1
+                    else:
+                        # Last subdivision still increases application count to keep pattern consistent
+                        offset_applications += 1
+
+                # After completing subdivisions, align to next channel start
+                if channel < 7:
+                    next_channel_offset = channel_start_v + 16 * self.elevation_res_rad
+                    macrostep_size = next_channel_offset - current_v_rel
+                    current_v_rel = next_channel_offset
+                    print(f"  Macrostep to next channel (+{np.degrees(macrostep_size):.3f}°)")
+                else:
+                    current_v_rel = channel_start_v + 16 * self.elevation_res_rad
         
         print(f"\nTest complete! Visited {len(positions)} positions")
         return positions
