@@ -189,8 +189,11 @@ class Test_Setup:
         fig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
         fig.tight_layout()
         if label:
+            import os
+            outdir = 'photos'
+            os.makedirs(outdir, exist_ok=True)
             safe_label = str(label).replace(" ", "_")
-            outfile = f"diagnostics_{safe_label}.png"
+            outfile = os.path.join(outdir, f"diagnostics_{safe_label}.png")
             fig.savefig(outfile, dpi=200, bbox_inches="tight")
             print(f"Saved diagnostics plot to {outfile}")
         plt.show()
@@ -303,7 +306,7 @@ class Test_Setup:
                     remaining_rows = 16 - sub_start_index
                     target_elevations = min(n_vertical, remaining_rows)
                     base_position_v = channel_start_v + sub_start_index * self.elevation_res_rad
-                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0)
+                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0) # This vertical step is another parameter we can play with. Needs to be small enough to not skip beams.
                     current_position_v = base_position_v + vertical_offset
 
                     # Count how many beams are actually visible

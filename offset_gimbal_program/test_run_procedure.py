@@ -13,8 +13,8 @@ def lighten_color(color, amount=0.5):
     return tuple(rgb[i] + (1 - rgb[i]) * amount for i in range(3))
 
 # Test at multiple distances
-test_distances = [100, 150]
-#test_distances = [5, 10, 50, 70]
+
+test_distances = [5, 10, 50, 70, 100, 150]
 
 
 # Channel colors (8 distinct colors)
@@ -242,8 +242,12 @@ for distance_m in test_distances:
         ax.set_ylim(-half_h * 1.3, half_h * 1.3)
             
         plt.tight_layout()
-        plt.savefig(f'{distance_m}m_frame_{frame_idx:02d}_channel_{channel_num}.png', dpi=150, bbox_inches='tight')
-        print(f"Saved {distance_m}m_frame_{frame_idx:02d}_channel_{channel_num}.png")
+        outdir = 'photos'
+        import os
+        os.makedirs(outdir, exist_ok=True)
+        outpath = os.path.join(outdir, f'{distance_m}m_frame_{frame_idx:02d}_channel_{channel_num}.png')
+        plt.savefig(outpath, dpi=150, bbox_inches='tight')
+        print(f"Saved {outpath}")
         plt.close()
 
     print(f"\n✓ Generated {len(unique_v_offsets)} frame visualizations for {distance_m}m")

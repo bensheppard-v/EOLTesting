@@ -1,0 +1,171 @@
+"""
+QUICK REFERENCE: Understanding Your LiDAR Sampling System
+==========================================================
+
+SENSOR LAYOUT
+-------------
+  128 elevation beams (vertical) organized as:
+  
+  Channel 0:  Elevations 0-15     ← HIGHEST (top of FOV)
+  Channel 1:  Elevations 0-15
+  Channel 2:  Elevations 0-15
+  Channel 3:  Elevations 0-15
+  Channel 4:  Elevations 0-15
+  Channel 5:  Elevations 0-15
+  Channel 6:  Elevations 0-15
+  Channel 7:  Elevations 0-15     ← LOWEST (bottom of FOV)
+  
+  Each channel has 16 elevations (0-15 within that channel)
+  Within each channel: Elevation 0 = highest, Elevation 15 = lowest
+
+
+SAMPLING GOAL
+-------------
+  Per CHANNEL (not total):
+    - 300 samples per channel
+    - Equal from each elevation
+    - 300 ÷ 16 = ~19 samples per elevation
+  
+  For ALL channels:
+    - 8 channels × 300 = 2400 total samples (if all reachable)
+
+
+CALIBRATION
+-----------
+  Step 1: Manually align gimbal so TOP of sensor FOV → TOP of target
+  Step 2: Record this position as (dphi_calib, dtheta_calib)
+  Step 3: All autofill offsets are RELATIVE to this position
+  
+  Code:
+    dphi, dtheta = compute_calibration_offset(counter)
+    counter.set_calibration(dphi, dtheta)
+
+
+AUTOFILL STAGES
+---------------
+  1. BASE (0, 0)
+     - Sample at calibration position
+     - See what elevations are visible
+  
+  2. MICROSTEPPING
+     - Small gimbal adjustments (< 1°)
+     - Densify currently-visible elevations
+     - Good for close targets
+  
+  3. MACROSTEPPING
+     - Large vertical jumps (~channel height)
+     - Bring new elevation groups onto target
+     - Essential for far targets
+
+
+DISTANCE BEHAVIOR
+-----------------
+  5-15m (CLOSE):
+    ✓ Many elevations visible (10+)
+    ✓ Can reach many/all channels
+    ✓ Mostly microstepping
+    ✓ Few gimbal positions needed
+  
+  25-50m (MEDIUM):
+    ◐ Some elevations visible (4-8)
+    ◐ Can reach 2-4 channels
+    ◐ Mix of micro/macro
+    ◐ Moderate gimbal positions
+  
+  75-100m (FAR):
+    ✗ Few elevations visible (1-3)
+    ✗ Can reach 1-2 channels
+    ✗ Heavy macrostepping
+    ✗ Many gimbal positions needed
+
+
+KEY PARAMETERS
+--------------
+  samples_per_bin: 19
+    Target samples per (channel, elevation)
+  
+  max_fine_subdiv: 16
+    How many microstepping divisions
+    Larger = finer density at each position
+  
+  max_coarse_steps: 20
+    How many macrostep iterations
+    Larger = can scan more elevation groups
+  
+  spot_radius_m: 0.01 (1cm)
+    Laser spot radius
+    Spots closer than 2×radius = overlap → rejected
+  
+  tolerance: 2
+    Allow bins to exceed target by this amount
+    (allows 19+2 = 21 samples max per bin)
+
+
+OUTPUT OFFSETS
+--------------
+  offsets_rel:  [(0.0, 0.0), (0.001, 0.0), ...]
+    Relative to calibration position
+    Internal use / analysis
+  
+  offsets_abs:  [(0.05, 0.12), (0.051, 0.12), ...]
+    Actual gimbal commands to execute
+    Includes calibration offset
+    USE THESE for your gimbal!
+
+
+TYPICAL WORKFLOW
+----------------
+  1. Define target geometry:
+     counter = FlatTargetHitCounter(
+         target_width_m=1.8,
+         target_height_m=1.3,
+         distance_m=50.0,
+         ...
+     )
+  
+  2. Calibrate:
+     dphi, dtheta = compute_calibration_offset(counter)
+     counter.set_calibration(dphi, dtheta)
+  
+  3. Run autofill:
+     offsets_rel, offsets_abs, samples, counts, channels, summary = \
+         counter.autofill_per_channel_elevation()
+  
+  4. Export:
+     counter.save_offsets_with_calibration(
+         'gimbal_offsets.csv',
+         offsets_rel,
+         offsets_abs
+     )
+  
+  5. Use offsets_abs to control your gimbal!
+
+
+TROUBLESHOOTING
+---------------
+  Q: "Completion rate is low (< 50%)"
+  A: Target may be too far/small. Only some channels reachable.
+     This is OK! Use what you can reach.
+  
+  Q: "Too many gimbal positions (> 100)"
+  A: Reduce max_coarse_steps or increase tolerance
+  
+  Q: "Not enough samples per elevation"
+  A: Increase max_fine_subdiv for more microstepping
+     or reduce spot_radius_m to allow closer points
+  
+  Q: "Some elevations have 0 samples"
+  A: Normal for far targets. Those elevations never hit target.
+     Algorithm will try to macrostep to reach them.
+
+
+FILES TO RUN
+------------
+  example_usage.py       → Basic example (recommended first!)
+  analyze_distances.py   → Compare behavior at different distances
+  test_point_counter.py  → Full test suite
+  
+  Your data:
+  gimbal_offsets.csv     → Gimbal commands (radians)
+  gimbal_offsets_deg.csv → Gimbal commands (degrees)
+"""
