@@ -1,5 +1,5 @@
 import numpy as np
-
+# Lawrence Tzuang and Ben Sheppard
 class Test_Setup:
     def __init__(
         self, 
@@ -198,7 +198,7 @@ class Test_Setup:
             print(f"Saved diagnostics plot to {outfile}")
         plt.show()
 
-    def run_test(self, diagnostics=False, plot_hist=False, diag_label=None):
+    def get_positions(self, diagnostics=False, plot_hist=False, diag_label=None):
         """
         Run the test procedure following the pseudocode.
         Returns list of relative gimbal positions visited.

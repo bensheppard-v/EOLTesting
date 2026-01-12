@@ -1,4 +1,8 @@
-"""Test the run_test procedure with visualization at multiple distances."""
+"""Test the get_positions procedure with visualization at multiple distances.
+Ben Sheppard
+
+
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,7 +49,7 @@ for distance_m in test_distances:
     print(f"Calibration: {np.degrees(calib[1]):.3f}°\n")
 
     # Run the test
-    positions = setup.run_test(diagnostics=True, plot_hist=True, diag_label=f"{distance_m}m")
+    positions = setup.get_positions(diagnostics=True, plot_hist=True, diag_label=f"{distance_m}m")
 
     # Get unique vertical positions (one plot per macrostep frame)
     unique_v_offsets = sorted(set([v for h, v in positions]))
