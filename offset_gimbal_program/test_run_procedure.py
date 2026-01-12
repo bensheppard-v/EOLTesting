@@ -13,7 +13,9 @@ def lighten_color(color, amount=0.5):
     return tuple(rgb[i] + (1 - rgb[i]) * amount for i in range(3))
 
 # Test at multiple distances
-test_distances = [5, 10, 50, 70, 100, 150]
+test_distances = [100, 150]
+#test_distances = [5, 10, 50, 70]
+
 
 # Channel colors (8 distinct colors)
 channel_colors = ['#e41a1c', '#377eb8', '#4daf4a', "#91499c", '#ff7f00', '#ffff33', '#a65628', "#af5083"]
@@ -43,7 +45,7 @@ for distance_m in test_distances:
     print(f"Calibration: {np.degrees(calib[1]):.3f}°\n")
 
     # Run the test
-    positions = setup.run_test()
+    positions = setup.run_test(diagnostics=True, plot_hist=True, diag_label=f"{distance_m}m")
 
     # Get unique vertical positions (one plot per macrostep frame)
     unique_v_offsets = sorted(set([v for h, v in positions]))
