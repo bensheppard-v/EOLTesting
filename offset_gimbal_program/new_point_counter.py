@@ -12,11 +12,8 @@ class Test_Setup:
         num_elevation_beams,
         samp_per_channel,
         buffer_m=0.0,
-        spot_diameter_m=0.0135,
-
-        
-        
         ):
+
         self.target_width_m = target_width_m
         self.target_height_m = target_height_m
         self.distance_m = distance_m
@@ -27,8 +24,6 @@ class Test_Setup:
 
         self.samp_per_channel = samp_per_channel
         self.buffer_m = buffer_m
-        self.spot_diameter_m = spot_diameter_m
-        self.spot_radius_m = spot_diameter_m / 2.0
         
         # Sensor FOV parameters
         self.hfov_rad = np.radians(45.0)  # 45° horizontal FOV
@@ -64,7 +59,9 @@ class Test_Setup:
         dphi_calib, dtheta_calib = calib_offset # Unpack calib_offset tuple
         self.gimbal_h_offset_rad = dphi_calib
         self.gimbal_v_offset_rad = dtheta_calib
-    
+    def get_v_calibration(self):
+        """Get current vertical gimbal calibration offset in radians."""
+        return self.gimbal_v_offset_rad
     def azimuth_angles(self, dphi_offset=0.0):
         """Generate all azimuth (horizontal) beam angles in radians."""
         phi_half, _ = self._angular_limits()
@@ -386,6 +383,24 @@ class Test_Setup:
             self._plot_diagnostics(diag, diag_label)
 
         return positions
+
+
+if(__name__ == "__main__"):
+        # Create setup at specified distance
+    setup = Test_Setup(
+        target_width_m = 1.8,
+        target_height_m = 1.3,
+        distance_m = 100,
+        sensor_height_offset_m = 0.0,
+        sensor_width_offset_m = 0.0,
+        num_azimuth_beams = 181,
+        num_elevation_beams = 128,
+        samp_per_channel = 400,
+        buffer_m = 0.01,
+    )
+    calib = setup.compute_calibration_offset()
+    setup.set_calibration(calib)
+    print(np.degrees(setup.get_positions()))
 
     # Test procedure
 

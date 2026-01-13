@@ -19,6 +19,7 @@ def lighten_color(color, amount=0.5):
 # Test at multiple distances
 
 test_distances = [5, 10, 50, 70, 100, 150]
+spot_diameter_m=0.0135  # 1.35cm diameter
 
 
 # Channel colors (8 distinct colors)
@@ -40,7 +41,6 @@ for distance_m in test_distances:
         num_elevation_beams=128,
         samp_per_channel=400,
         buffer_m=0.01,
-        spot_diameter_m=0.0135  # 1.35cm diameter
     )
 
     # Set calibration
@@ -141,7 +141,7 @@ for distance_m in test_distances:
                     fig_width_inches = 12
                     data_width = 2.6  # actual x-axis range (1.3 * target width)
                     points_per_data_unit = (fig_width_inches * 72) / data_width  # 72 pts/inch
-                    circle_size = (setup.spot_diameter_m * points_per_data_unit) ** 2
+                    circle_size = (spot_diameter_m * points_per_data_unit) ** 2
                     
                     # Only add label once per channel
                     label = f'Ch{ch}' if ch not in channels_plotted else None
@@ -187,7 +187,7 @@ for distance_m in test_distances:
                     fig_width_inches = 12
                     data_width = 2.6
                     points_per_data_unit = (fig_width_inches * 72) / data_width
-                    circle_size = (setup.spot_diameter_m * points_per_data_unit) ** 2
+                    circle_size = (spot_diameter_m * points_per_data_unit) ** 2
                     
                     # Use lighter shade of the same channel color
                     light_color = lighten_color(channel_colors[ch], amount=0.5)

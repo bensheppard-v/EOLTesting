@@ -24,7 +24,6 @@ num_azimuth_beams = 181
 num_elevation_beams = 128
 samp_per_channel = 400
 buffer_m = 0.01
-spot_diameter_m = 0.0135
 
 if __name__ == '__main__':
     gimbal = EC_XGRSTDEGimbal('COM5')
@@ -35,23 +34,29 @@ if __name__ == '__main__':
     # Define the test setup
     setup = Test_Setup(target_width_m, target_height_m,
                        distance_m, sensor_height_offset_m, sensor_width_offset_m,
-                       num_azimuth_beams, num_elevation_beams, samp_per_channel, buffer_m, spot_diameter_m)
+                       num_azimuth_beams, num_elevation_beams, samp_per_channel, buffer_m)
     
     # Compute and set calibration; move gimbal to position
     calib = setup.compute_calibration_offset()
     setup.set_calibration(calib)
     print(f"Calibration: {np.degrees(calib[1]):.3f}°\n")
-    gimbal.move_to_spot_V_relatively(np.degrees(setup.get_v_calibration()))
+    gimbal.move_to_spot_H_relatively(-np.degrees(setup.get_v_calibration()))
 
     # Get the positions for gimbal to move to
     positions = setup.get_positions()
-    print(f"Total positions to visit: {len(positions)}")
 
+    # may need to negate positions depending on gimbal orientation
+    print(f"Total positions to visit: {len(positions)}")
+    print(np.degrees(positions))
     for dphi, dtheta in positions:
-        gimbal.move_to_spot_relative(np.degrees(dphi), np.degrees(dtheta)) # it is blocking, so will wait
+        # note:: they are swapped because gimbal's horizontal axis corresponds to elevation in our setup, and vertical axis
+        # corresponds to azimuth in our setup.
+        gimbal.move_to_spot_relative(np.degrees(dtheta),np.degrees(dphi)) # it is blocking, so will wait
+        print(f"Moved to position: H={np.degrees(dphi):.3f} deg, V={np.degrees(dtheta):.3f} deg")
         time.sleep(0.25)  # wait a bit at each position
-        pyautogui.click() # Trigger lidar capture. Find the correct mousclick coordinates 
+        pyautogui.click() # Trigger lidar capture. Add the correct mousclick coordinates as parameter
         time.sleep(0.25)  # wait a bit after capture
+
 
 
 
