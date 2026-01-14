@@ -107,7 +107,6 @@ for distance_m in test_distances:
     # Diagnostics
     diag = init_diagnostics()
     # Run the test
-    # Note: Removed arguments that might not be in the imported class definition
     positions, positions_map = setup.get_positions()
     
     # Record samples (assuming hit_indices, n_azimuth, microsteps available)
@@ -308,7 +307,7 @@ for distance_m in test_distances:
                         # Position label
                         x_pos = half_w * 1.15
                         
-                        # Use the EXACT value from the map as the label
+                        # Use the exact value from the map as the label (ensures correct mapping between visualization and what actually will hit the target with the gimbal)
                         label_str = str(map_elev)
                         
                         ax.text(x_pos, y_pos, label_str, 

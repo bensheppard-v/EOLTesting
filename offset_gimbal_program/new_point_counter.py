@@ -149,10 +149,10 @@ class Test_Setup:
         elevation_idx = 15 - (sensor_idx % 16)
         return channel_idx, elevation_idx
 
-    def get_positions(self, diagnostics=False, plot_hist=False, diag_label="test"):
+    def get_positions(self):
         """
         Run the test procedure following the pseudocode.
-        Returns list of relative gimbal positions visited.
+        Returns list of relative gimbal positions visited as well as a map of covered indices at each vertical position.
         """
 
         # Count beams at calibration
@@ -179,7 +179,6 @@ class Test_Setup:
             channel = 0
             while channel < 8:
                 print(f"\nChannel {channel}:")
-                # No micro-dither logic requested for full channel case, using standard
                 current_position_v = current_v_rel
 
                 n_azimuth, n_elevation, channel_elev_indices = self.count_beams_on_target(0, current_position_v, return_indices=True)
@@ -239,11 +238,10 @@ class Test_Setup:
                 # Iterate until we have covered all 16 elevations in this channel
                 while beams_processed_in_channel < 16:
                     
-                    # 1. Calculate Dithered Position (NEGATIVE DRIFT)
                     # We subtract the offset to move beams DOWN (or target UP relative to beams)
                     # This ensures the "leading edge" (top of the next chunk) stays safely inside the target
                     # instead of drifting off the top.
-                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0)
+                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0) # KEY PARAMETER TO PLAY WITH!!!!!
                     current_position_v = current_v_rel - vertical_offset
                     
                     # 2. Count visible beams at this dithered position
@@ -327,3 +325,35 @@ if(__name__ == "__main__"):
     print("Positions (degrees):", positions_deg)
     print("\n")
     print("Positions info (covered):", positions_info)
+
+        # Test procedure
+
+    """
+    Assume it was initially calibrated (set_calibration called) for the given distance. save calibration of initial point
+
+    Then compute how many vertical beams are landing on the target (n_vertical)
+
+    If n_vertical >= 16 (full channel or more in view):
+        For each of 8 channels:
+            Micro step to collect num_samples for the channel 
+            Macro step UP by 16 elevations so next channel is at top of target
+    
+    If n_vertical < 16 (partial channel in view):
+        For each of 8 channels:
+            Calculate subdivisions_needed = ceil(16 / n_vertical)
+            For each subdivision:
+                Calculate how many elevations visible at this position:
+                    - All positions except last: n_vertical elevations
+                    - Last position: remaining elevations = 16 - (n_vertical * (subdivisions_needed - 1))
+                Micro step to collect (elevations_visible / 16) * num_samples
+                If not last subdivision of channel:
+                    Macro step UP by n_vertical elevations so next chunk is at top of target
+                Else (last subdivision):
+                    Macro step UP by remaining elevations to align next channel at top of target
+    
+    Notes:
+        - Each of the 16 elevations in a channel gets equal sampling weight
+        - Example with n_vertical = 7: step by 7, 7, then 2 to complete channel and align next
+        - Micro step = collect samples at current gimbal position
+        - Macro step = move gimbal to next position (positive offset = tilt up = pattern moves up)
+    """
