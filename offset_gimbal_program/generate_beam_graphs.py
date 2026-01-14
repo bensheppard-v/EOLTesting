@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.colors import to_rgb
-from new_point_counter import Test_Setup
+from testing import Test_Setup
 
 # Helper function to lighten a color
 
@@ -74,7 +74,7 @@ def plot_diagnostics(diag, label=None):
 
 # Test at multiple distances
 
-test_distances = [5, 10, 50, 70, 100]
+test_distances = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]  # in meters
 spot_diameter_m=0.0135  # 1.35cm diameter
 
 
@@ -102,12 +102,14 @@ for distance_m in test_distances:
     # Set calibration
     calib = setup.compute_calibration_offset()
     setup.set_calibration(calib)
-    print(f"Calibration: {np.degrees(calib[1]):.3f}0\n")
+    print(f"Calibration: {np.degrees(calib[1]):.3f} 0\n")
 
     # Diagnostics
     diag = init_diagnostics()
     # Run the test
-    positions, _ = setup.get_positions(diagnostics=True, plot_hist=False, diag_label=f"{distance_m}m")
+    # Note: Removed arguments that might not be in the imported class definition
+    positions, positions_map = setup.get_positions()
+    
     # Record samples (assuming hit_indices, n_azimuth, microsteps available)
     # record_samples(diag, hit_indices, n_azimuth, microsteps)
     # Plot diagnostics
@@ -189,6 +191,9 @@ for distance_m in test_distances:
             
             # Plot beams by channel (INITIAL - thick, dark)
             for ch in range(8):
+                # NOTE: The loop here iterates LOGICAL channels (0=Top).
+                # But the map uses RAW channels/elevations.
+                # Visualization matches the scatter plot logic.
                 ch_start = 128 - (ch + 1) * 16
                 ch_end = 128 - ch * 16
                 
@@ -268,33 +273,48 @@ for distance_m in test_distances:
                               zorder=1,
                               label=label)
         
-        # Label elevations only on initial position
+        # Label elevations directly from map data
+        # Recalculate geometric projection for labeling
         phis = setup.azimuth_angles(0.0)
         thetas = setup.elevation_angles(setup.gimbal_v_offset_rad + v_offset)
         PHI, THETA = np.meshgrid(phis, thetas)
         X = setup.distance_m * np.tan(PHI)
         Y = setup.distance_m * np.tan(THETA)
-        # Apply buffer to mask
         usable_half_w = half_w - setup.buffer_m
         usable_half_h = half_h - setup.buffer_m
         mask = (np.abs(X) <= usable_half_w) & (np.abs(Y) <= usable_half_h)
         
-        for ch in range(8):
-            ch_start = 128 - (ch + 1) * 16
-            for elev in range(16):
-                elev_idx = ch_start + elev
-                if np.any(mask[elev_idx, :]):
-                    hit_cols = np.where(mask[elev_idx, :])[0]
+        deg_key = round(np.degrees(v_offset), 5)
+        
+        if deg_key in positions_map:
+            active_channels, active_elevs = positions_map[deg_key]
+            
+            # Iterate through the actual beams recorded in the map
+            for i in range(len(active_channels)):
+                raw_ch = active_channels[i]
+                map_elev = active_elevs[i] # This is sensor_idx % 16
+                
+                # Calculate sensor_idx to find geometric position
+                # map_elev (0..15) + raw_ch (0..7) * 16 = sensor_idx (0..127)
+                sensor_idx = int(raw_ch * 16 + map_elev)
+                
+                # Verify this beam has pixels on target in the projection
+                if 0 <= sensor_idx < 128 and np.any(mask[sensor_idx, :]):
+                    hit_cols = np.where(mask[sensor_idx, :])[0]
                     if len(hit_cols) > 0:
-                        # Get y position from center of beam pattern
                         col_idx = hit_cols[len(hit_cols)//2]
-                        y_pos = Y[elev_idx, col_idx]
-                        # Place label to the right of the target
+                        y_pos = Y[sensor_idx, col_idx]
+                        
+                        # Position label
                         x_pos = half_w * 1.15
-                        ax.text(x_pos, y_pos, str(elev), 
+                        
+                        # Use the EXACT value from the map as the label
+                        label_str = str(map_elev)
+                        
+                        ax.text(x_pos, y_pos, label_str, 
                                fontsize=8, ha='left', va='center',
                                color='black', weight='bold')
-        
+
         ax.set_xlabel('Horizontal Position (m)', fontsize=11)
         ax.set_ylabel('Vertical Position (m)', fontsize=11)
         ax.set_aspect('equal')
