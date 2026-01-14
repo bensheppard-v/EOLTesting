@@ -149,7 +149,7 @@ class Test_Setup:
         elevation_idx = 15 - (sensor_idx % 16)
         return channel_idx, elevation_idx
 
-    def get_positions(self):
+    def get_positions(self, diagnostics=False, plot_hist=False, diag_label="test"):
         """
         Run the test procedure following the pseudocode.
         Returns list of relative gimbal positions visited.
@@ -159,7 +159,7 @@ class Test_Setup:
         _, n_vertical = self.count_beams_on_target(0, 0)
         if n_vertical == 0:
             print("No vertical beams on target at calibration. Abort test.")
-            return []
+            return [], {}
         print(f"Starting test at calibration: {n_vertical} vertical beams visible")
 
 
@@ -167,8 +167,8 @@ class Test_Setup:
         positions = []
         # Track covered indices for each position
         positions_map = {}        
-        # Current relative vertical offset from calibration
-        current_v_rel = 0.0  # Vertical offset relative to calibration
+        # Current relative vertical offset from calibration (BASE position)
+        current_v_rel = 0.0  
         
 
 
@@ -179,6 +179,7 @@ class Test_Setup:
             channel = 0
             while channel < 8:
                 print(f"\nChannel {channel}:")
+                # No micro-dither logic requested for full channel case, using standard
                 current_position_v = current_v_rel
 
                 n_azimuth, n_elevation, channel_elev_indices = self.count_beams_on_target(0, current_position_v, return_indices=True)
@@ -227,53 +228,51 @@ class Test_Setup:
 
         else:
             print(f"Case: n_vertical < 16 (partial channel visible)")
-            print(
-                f"  Estimated subdivisions per channel: {int(np.ceil(16 / max(1, n_vertical)))}"
-            )
             
             for channel in range(8):
                 print(f"\nChannel {channel}:")
-                channel_start_v = current_v_rel
-                offset_applications = 0
-                sub_start_index = 0
-                subdivision = 0
                 
-                while sub_start_index < 16:
-                    remaining_rows = 16 - sub_start_index
-                    target_elevations = min(n_vertical, remaining_rows)
-                    base_position_v = channel_start_v + sub_start_index * self.elevation_res_rad
-                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0) # This vertical step is another parameter we can play with. Needs to be small enough to not skip beams. Ensures you dont land on same spot 2x within channel
-                    current_position_v = base_position_v + vertical_offset
-
-                    # Count how many beams are actually visible
-
-
+                # We track how many beams we have successfully processed in this channel
+                beams_processed_in_channel = 0
+                offset_applications = 0
+                
+                # Iterate until we have covered all 16 elevations in this channel
+                while beams_processed_in_channel < 16:
+                    
+                    # 1. Calculate Dithered Position (NEGATIVE DRIFT)
+                    # We subtract the offset to move beams DOWN (or target UP relative to beams)
+                    # This ensures the "leading edge" (top of the next chunk) stays safely inside the target
+                    # instead of drifting off the top.
+                    vertical_offset = offset_applications * (self.elevation_res_rad / 16.0)
+                    current_position_v = current_v_rel - vertical_offset
+                    
+                    # 2. Count visible beams at this dithered position
                     n_azimuth, actual_elevations, actual_elevation_indices = self.count_beams_on_target(0, current_position_v, return_indices=True)
-                    print("channel elev:",actual_elevation_indices)
+                    print("channel elev:", actual_elevation_indices)
 
-                    # Get the channel/elevation pair from the actual elevation indices
+                    # Map for diagnostics
                     channels = actual_elevation_indices // 16
                     elevations = actual_elevation_indices % 16
                     angle = round(np.degrees(current_position_v), 5) 
                     
-                    # Add to positions_map to keep track of coverage
                     if angle not in positions_map:
                         positions_map[angle] = (channels, elevations)
 
-                    elevations_visible = min(target_elevations, actual_elevations)
-                    if elevations_visible <= 0 or n_azimuth <= 0:
-                        print(
-                            f"  Subdivision {subdivision}: no beams on target (v_offset={np.degrees(current_position_v):.3f}°). Skipping."
-                        )
-                        sub_start_index += 1
-                        offset_applications += 1
-                        subdivision += 1
-                        continue
+                    if actual_elevations <= 0 or n_azimuth <= 0:
+                         print(f"  Warning: No beams on target at v_offset={np.degrees(current_position_v):.3f}°. Advancing by estimate...")
+                         step_size_beams = max(1, n_vertical)
+                         current_v_rel += step_size_beams * self.elevation_res_rad
+                         beams_processed_in_channel += step_size_beams
+                         offset_applications += 1
+                         continue
 
-                    microsteps_needed = self._microsteps_needed(n_azimuth, elevations_visible)
+                    # 3. Perform Microsteps
+                    microsteps_needed = self._microsteps_needed(n_azimuth, actual_elevations)
                     print(
-                        f"  Subdivision {subdivision}: {elevations_visible} elevations, {n_azimuth} az beams,"
-                        f" microsteps {microsteps_needed} at v_offset={np.degrees(current_position_v):.3f}°"
+                        f"  Chunk start {beams_processed_in_channel}: "
+                        f"{actual_elevations} visible. "
+                        f"Microsteps {microsteps_needed} at v_offset={np.degrees(current_position_v):.3f}° "
+                        f"(base={np.degrees(current_v_rel):.3f} - off={np.degrees(vertical_offset):.4f})"
                     )
 
                     for step, h_offset in enumerate(self._microstep_offsets(microsteps_needed)):
@@ -283,30 +282,25 @@ class Test_Setup:
                         )
                         positions.append((h_offset, current_position_v))
 
-                    # Get hit_indices for this position (global sensor indices)
-
-                    local_indices = [sub_start_index + i for i in range(elevations_visible)]
-
-                    max_local = max(local_indices)
-                    if max_local >= 15:
-                        sub_start_index = 16
-                    else:
-                        overlap = 1 # found that overlapping by 1 elevation works well to ensure no gaps
-                        next_start = max_local + 1 - overlap
-                        if next_start <= sub_start_index:
-                            next_start = sub_start_index + max(1, elevations_visible - overlap)
-                        sub_start_index = min(next_start, 16)
+                    # 4. Strict Stepping without overlap
+                    # Since we are drifting DOWN (into the target), the top beam of the next chunk
+                    # should be safely inside. We can step by the full 'actual_elevations'.
+                    step_beams = actual_elevations
+                    step_rad = step_beams * self.elevation_res_rad
+                    
+                    current_v_rel += step_rad
+                    beams_processed_in_channel += step_beams
                     offset_applications += 1
-                    subdivision += 1
+                    
+                    print(f"  Macrostep UP by {step_beams} beams (+{np.degrees(step_rad):.3f}°)")
 
-                # After completing subdivisions, align to next channel start
-                if channel < 7:
-                    next_channel_offset = channel_start_v + 16 * self.elevation_res_rad
-                    macrostep_size = next_channel_offset - current_v_rel
-                    current_v_rel = next_channel_offset
-                    print(f"  Macrostep to next channel (+{np.degrees(macrostep_size):.3f}°)")
-                else:
-                    current_v_rel = channel_start_v + 16 * self.elevation_res_rad
+                # End of channel loop. Align to exact next channel start.
+                next_channel_start_target = (channel + 1) * 16 * self.elevation_res_rad
+                drift = current_v_rel - next_channel_start_target
+                if abs(drift) > 1e-6:
+                     print(f"  Aligning next channel. Drift was {np.degrees(drift):.5f}°")
+                     current_v_rel = next_channel_start_target
+
         
         print(f"\nTest complete! Visited {len(positions)} positions")
         return positions, positions_map
@@ -317,7 +311,7 @@ if(__name__ == "__main__"):
     setup = Test_Setup(
         target_width_m = 1.8,
         target_height_m = 1.3,
-        distance_m = 50,
+        distance_m = 100,
         sensor_height_offset_m = 0.0,
         sensor_width_offset_m = 0.0,
         num_azimuth_beams = 181,
@@ -333,35 +327,3 @@ if(__name__ == "__main__"):
     print("Positions (degrees):", positions_deg)
     print("\n")
     print("Positions info (covered):", positions_info)
-
-    # Test procedure
-
-    """
-    Assume it was initially calibrated (set_calibration called) for the given distance. save calibration of initial point
-
-    Then compute how many vertical beams are landing on the target (n_vertical)
-
-    If n_vertical >= 16 (full channel or more in view):
-        For each of 8 channels:
-            Micro step to collect num_samples for the channel 
-            Macro step UP by 16 elevations so next channel is at top of target
-    
-    If n_vertical < 16 (partial channel in view):
-        For each of 8 channels:
-            Calculate subdivisions_needed = ceil(16 / n_vertical)
-            For each subdivision:
-                Calculate how many elevations visible at this position:
-                    - All positions except last: n_vertical elevations
-                    - Last position: remaining elevations = 16 - (n_vertical * (subdivisions_needed - 1))
-                Micro step to collect (elevations_visible / 16) * num_samples
-                If not last subdivision of channel:
-                    Macro step UP by n_vertical elevations so next chunk is at top of target
-                Else (last subdivision):
-                    Macro step UP by remaining elevations to align next channel at top of target
-    
-    Notes:
-        - Each of the 16 elevations in a channel gets equal sampling weight
-        - Example with n_vertical = 7: step by 7, 7, then 2 to complete channel and align next
-        - Micro step = collect samples at current gimbal position
-        - Macro step = move gimbal to next position (positive offset = tilt up = pattern moves up)
-    """

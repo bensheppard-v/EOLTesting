@@ -43,7 +43,7 @@ if __name__ == '__main__':
     gimbal.move_to_spot_H_relatively(-np.degrees(setup.get_v_calibration()))
 
     # Get the positions for gimbal to move to
-    positions = setup.get_positions()
+    positions, positions_info = setup.get_positions()
 
     # may need to negate positions depending on gimbal orientation
     print(f"Total positions to visit: {len(positions)}")
