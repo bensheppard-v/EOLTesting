@@ -3,6 +3,7 @@ import os
 import time
 import numpy as np
 import shutil
+import json
 import pyautogui
 from zaber_motion import Units, Library
 from zaber_motion.ascii import Connection
@@ -25,12 +26,59 @@ num_elevation_beams = 128
 samp_per_channel = 400
 buffer_m = 0.01
 
+
+def move_capture(gui_result_folder: str, test_case_path: str, frame: int,
+                 fixed_wait: float = 0.5) -> bool:
+    """Simplified move: wait a fixed time then move the captured subfolder or files.
+
+    Returns True if anything was moved, False otherwise.
+    """
+    frame_result = os.path.join(test_case_path, f'frame_{frame:04d}')
+    os.makedirs(frame_result, exist_ok=True)
+
+    # Simple fixed wait (caller chooses duration)
+    time.sleep(fixed_wait)
+
+    try:
+        entries = os.listdir(gui_result_folder)
+    except FileNotFoundError:
+        entries = []
+
+    # Prefer moving a single subfolder if present
+    dirs = [e for e in entries if os.path.isdir(os.path.join(gui_result_folder, e))]
+    if dirs:
+        src = os.path.join(gui_result_folder, dirs[0])
+        dst = os.path.join(frame_result, dirs[0])
+        try:
+            shutil.move(src, dst)
+            os.makedirs(gui_result_folder, exist_ok=True)
+            return True
+        except Exception:
+            pass
+
+    moved_any = False
+    # Otherwise move any files present
+    for name in entries:
+        src = os.path.join(gui_result_folder, name)
+        dst = os.path.join(frame_result, name)
+        try:
+            shutil.move(src, dst)
+            moved_any = True
+        except Exception:
+            pass
+
+    os.makedirs(gui_result_folder, exist_ok=True)
+    return moved_any
+
+
 if __name__ == '__main__':
     gimbal = EC_XGRSTDEGimbal('COM5')
     print("Homing both axes...")
     gimbal.voyant_home_both_axes()
     time.sleep(3)
 
+
+    # Distances
     # Define the test setup
     setup = Test_Setup(target_width_m, target_height_m,
                        distance_m, sensor_height_offset_m, sensor_width_offset_m,
@@ -49,16 +97,26 @@ if __name__ == '__main__':
     print(f"Total positions to visit: {len(positions)}")
     print(np.degrees(positions))
 
-    # linux
-    # gui_result_folder = '~/git/carbon_motor_drive/results/integration_capture/'
-    # all_results_folder = '~/Desktop/EOLTesting/results/'
-    # windows
-    gui_result_folder = 'C:\\Users\\BenSheppard\\git\\carbon_motor_drive\\results\\integration_capture\\'
-    all_results_folder = 'C:\\Users\\BenSheppard\\Desktop\\EOLTesting\\results\\'
+    gui_result_folder = os.path.expanduser('~/git/carbon_motor_drive/results/integration_capture')
+    all_results_folder = os.path.expanduser('~/Desktop/EOLTesting/results')
 
     # need to add code to make another folder which is data for that very test case
 
-    test_case_path = os.path.join(all_results_folder, 'test')
+
+    test_case_path = os.path.join(all_results_folder, 'test') # in future, include what test it is here
+    os.makedirs(test_case_path, exist_ok=True)
+
+    # Save a json with the setup conditions
+    out_file = os.path.join(test_case_path, 'test_setup.json') # I think its ok to leave generic file name here
+
+
+    with open(out_file, 'w') as f:
+        json.dump(setup.__dict__, f, indent=4, default=str)
+    print(f'Saved test setup to {out_file}')
+
+    # Ensure the GUI capture folder exists (the capture tool writes files here)
+    os.makedirs(gui_result_folder, exist_ok=True)
+
     frame = 0
     for dphi, dtheta in positions:
         # note:: they are swapped because gimbal's horizontal axis corresponds to elevation in our setup, and vertical axis
@@ -66,12 +124,15 @@ if __name__ == '__main__':
         gimbal.move_to_spot_relative(np.degrees(dtheta),np.degrees(dphi)) # it is blocking, so will wait
         print(f"Moved to position: H={np.degrees(dphi):.3f} deg, V={np.degrees(dtheta):.3f} deg")
         time.sleep(0.25)  # wait a bit at each position
-        pyautogui.click() # Trigger lidar capture. Add the correct mousclick coordinates as parameter
-        
-        frame_result = os.path.join(test_case_path, str(frame).zfill(3))
-        shutil.move(gui_result_folder, frame_result)
+        pyautogui.click() # Trigger lidar capture. Add the correct mouseclick coordinates as parameter
+
+        # Move the capture into a numbered frame folder (fixed short wait)
+        moved = move_capture(gui_result_folder, test_case_path, frame, fixed_wait=0.5)
+        if not moved:
+            print(f'Warning: nothing moved for frame {frame:04d}')
+
+        frame += 1
         time.sleep(0.25)  # wait a bit after capture
-        frame +=1
 
 
 
@@ -96,4 +157,12 @@ if __name__ == '__main__':
     # gimbal.voyant_home_both_axes()
     # gimbal.home_vertical_axis()
     # gimbal.home_ho_axis()
+
+
+
+
+# Remove the lib path from sys.path after use
+lib_path = os.path.join(os.path.dirname(__file__), '.', 'lib')
+if lib_path in sys.path:
+	sys.path.remove(lib_path)
 
