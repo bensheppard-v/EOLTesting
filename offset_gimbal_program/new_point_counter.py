@@ -136,12 +136,16 @@ class Test_Setup:
         return max(1, steps)
 
     def _microstep_offsets(self, steps):
-        """Return symmetric azimuth offsets for microstepping."""
-        if steps <= 1:
-            return [0.0]
-        step_size = self.azimuth_res_rad / 20.0 # This is a parameter we can play with. Currently stepping to the right by 1/20 of azimuth resolution. Can't go too big or we hit same spot on target more than once.
-        center = (steps - 1) / 2.0
-        return [(idx - center) * step_size for idx in range(steps)]
+            """Return symmetric azimuth offsets for microstepping."""
+            if steps <= 1:
+                return [0.0]
+            if steps < 16:
+                step_size = self.azimuth_res_rad / steps 
+            else:
+                step_size = self.azimuth_res_rad / 20.0
+            
+            # Start from 0 and step right (positive)
+            return [idx * step_size for idx in range(steps)]
 
     def _sensor_index_to_channel_elev(self, sensor_idx):
         channel_idx = 7 - (sensor_idx // 16)
@@ -240,7 +244,7 @@ class Test_Setup:
                     
                     # We subtract the offset to move beams DOWN (or target UP relative to beams)
                     # This ensures the "leading edge" (top of the next chunk) stays safely inside the target
-                    # instead of drifting off the top.
+                    # instead of drifting off the top.        
                     vertical_offset = offset_applications * (self.elevation_res_rad / 16.0) # KEY PARAMETER TO PLAY WITH!!!!!
                     current_position_v = current_v_rel - vertical_offset
                     
@@ -266,6 +270,7 @@ class Test_Setup:
 
                     # 3. Perform Microsteps
                     microsteps_needed = self._microsteps_needed(n_azimuth, actual_elevations)
+                    
                     print(
                         f"  Chunk start {beams_processed_in_channel}: "
                         f"{actual_elevations} visible. "

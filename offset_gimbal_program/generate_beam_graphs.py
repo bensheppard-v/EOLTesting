@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.colors import to_rgb
-from testing import Test_Setup
+from new_point_counter import Test_Setup
 
 # Helper function to lighten a color
 
@@ -74,7 +74,7 @@ def plot_diagnostics(diag, label=None):
 
 # Test at multiple distances
 
-test_distances = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]  # in meters
+test_distances = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]  # in meters
 spot_diameter_m=0.0135  # 1.35cm diameter
 
 
@@ -95,7 +95,7 @@ for distance_m in test_distances:
         sensor_width_offset_m=0.0,
         num_azimuth_beams=181,
         num_elevation_beams=128,
-        samp_per_channel=1000,
+        samp_per_channel=5000,
         buffer_m=0.01,
     )
 
@@ -327,7 +327,7 @@ for distance_m in test_distances:
         ax.set_ylim(-half_h * 1.3, half_h * 1.3)
             
         plt.tight_layout()
-        outdir = 'photos2'
+        outdir = 'photos3'
         import os
         os.makedirs(outdir, exist_ok=True)
         outpath = os.path.join(outdir, f'{distance_m}m_frame_{frame_idx:02d}_channel_{channel_num}.png')
