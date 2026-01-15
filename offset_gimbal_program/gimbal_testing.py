@@ -2,16 +2,16 @@ import sys
 import os
 import time
 import numpy as np
+import shutil
 import pyautogui
 from zaber_motion import Units, Library
 from zaber_motion.ascii import Connection
 from new_point_counter import Test_Setup
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-lib_path = os.path.join(script_dir, '..', 'lib')
-sys.path.append(lib_path)
+# script_dir = os.path.dirname(os.path.abspath(__file__))
+# lib_path = os.path.join(script_dir, '..', 'lib')
+# sys.path.append(lib_path)
 from EC_XGRSTDEGimbal import EC_XGRSTDEGimbal
-
 
 
 
@@ -48,6 +48,15 @@ if __name__ == '__main__':
     # may need to negate positions depending on gimbal orientation
     print(f"Total positions to visit: {len(positions)}")
     print(np.degrees(positions))
+
+    gui_result_folder = '~/git/carbon_motor_drive/results/integration_capture/'
+    all_results_folder = '~/Desktop/EOLTesting/results/'
+
+
+    # need to add code to make another folder which is data for that very test case
+
+    test_case_path = os.path.join(all_results_folder, 'test')
+    frame = 0
     for dphi, dtheta in positions:
         # note:: they are swapped because gimbal's horizontal axis corresponds to elevation in our setup, and vertical axis
         # corresponds to azimuth in our setup.
@@ -55,6 +64,9 @@ if __name__ == '__main__':
         print(f"Moved to position: H={np.degrees(dphi):.3f} deg, V={np.degrees(dtheta):.3f} deg")
         time.sleep(0.25)  # wait a bit at each position
         pyautogui.click() # Trigger lidar capture. Add the correct mousclick coordinates as parameter
+        
+        frame_result = os.path.join(all_results_folder, f"{test_case_path}{frame}")
+        shutil.move(gui_result_folder, frame_result)
         time.sleep(0.25)  # wait a bit after capture
 
 
