@@ -49,9 +49,12 @@ if __name__ == '__main__':
     print(f"Total positions to visit: {len(positions)}")
     print(np.degrees(positions))
 
-    gui_result_folder = '~/git/carbon_motor_drive/results/integration_capture/'
-    all_results_folder = '~/Desktop/EOLTesting/results/'
-
+    # linux
+    # gui_result_folder = '~/git/carbon_motor_drive/results/integration_capture/'
+    # all_results_folder = '~/Desktop/EOLTesting/results/'
+    # windows
+    gui_result_folder = 'C:\\Users\\BenSheppard\\git\\carbon_motor_drive\\results\\integration_capture\\'
+    all_results_folder = 'C:\\Users\\BenSheppard\\Desktop\\EOLTesting\\results\\'
 
     # need to add code to make another folder which is data for that very test case
 
@@ -65,9 +68,10 @@ if __name__ == '__main__':
         time.sleep(0.25)  # wait a bit at each position
         pyautogui.click() # Trigger lidar capture. Add the correct mousclick coordinates as parameter
         
-        frame_result = os.path.join(all_results_folder, f"{test_case_path}{frame}")
+        frame_result = os.path.join(test_case_path, str(frame).zfill(3))
         shutil.move(gui_result_folder, frame_result)
         time.sleep(0.25)  # wait a bit after capture
+        frame +=1
 
 
 
@@ -92,12 +96,4 @@ if __name__ == '__main__':
     # gimbal.voyant_home_both_axes()
     # gimbal.home_vertical_axis()
     # gimbal.home_ho_axis()
-
-
-
-
-# Remove the lib path from sys.path after use
-lib_path = os.path.join(os.path.dirname(__file__), '.', 'lib')
-if lib_path in sys.path:
-	sys.path.remove(lib_path)
 
