@@ -20,7 +20,6 @@ target_width_m = 1.8
 target_height_m = 1.3
 distance_m = 100
 sensor_height_offset_m = 0
-sensor_width_offset_m = 0
 num_azimuth_beams = 181
 num_elevation_beams = 128
 samp_per_channel = 400
@@ -70,6 +69,24 @@ def move_capture(gui_result_folder: str, test_case_path: str, frame: int,
     os.makedirs(gui_result_folder, exist_ok=True)
     return moved_any
 
+def generate_test_setups(target_width_m, target_height_m, sensor_height_offset_m, samp_per_channel, buffer_m):
+    """Generate a list of test setups with varying parameters."""
+    setups = []
+    ranges_m = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    azimuth_settings_percent = [-75, 0, 75]
+    HFOVs_deg = [45, 120]
+    for dist in ranges_m:
+        for az in azimuth_settings_percent:
+            for HFOV in HFOVs_deg:
+                setup = Test_Setup(target_width_m, target_height_m, dist,
+                                    sensor_height_offset_m,
+                                    num_azimuth_beams, num_elevation_beams,
+                                    samp_per_channel,
+                                    buffer_m)
+                setups.append(setup)
+    return setups
+
+generate_test_setups(target_width_m, target_height_m, sensor_height_offset_m, samp_per_channel,buffer_m)
 
 if __name__ == '__main__':
     gimbal = EC_XGRSTDEGimbal('COM5')
@@ -81,8 +98,9 @@ if __name__ == '__main__':
     # Distances
     # Define the test setup
     setup = Test_Setup(target_width_m, target_height_m,
-                       distance_m, sensor_height_offset_m, sensor_width_offset_m,
-                       num_azimuth_beams, num_elevation_beams, samp_per_channel, buffer_m)
+                       distance_m, sensor_height_offset_m,
+                       num_azimuth_beams, num_elevation_beams, 
+                       samp_per_channel, buffer_m)
     
     # Compute and set calibration; move gimbal to position
     calib = setup.compute_calibration_offset()

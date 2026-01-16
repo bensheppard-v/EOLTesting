@@ -3,36 +3,39 @@ import numpy as np
 class Test_Setup:
     def __init__(
         self, 
+        test_id,
         target_width_m, 
         target_height_m, 
         distance_m, 
         sensor_height_offset_m,
-        sensor_width_offset_m,
         num_azimuth_beams,
         num_elevation_beams,
+        hfov_deg,
+        azimuth_setting_percent,
         samp_per_channel,
         buffer_m=0.0,
         ):
-
+        self.test_id = test_id
         self.target_width_m = target_width_m
         self.target_height_m = target_height_m
         self.distance_m = distance_m
-        self.sensor_height_offset_m = sensor_height_offset_m
-        self.sensor_width_offset_m = sensor_width_offset_m
+        self.sensor_height_offset_m = sensor_height_offset_m,
         self.num_azimuth_beams = num_azimuth_beams
         self.num_elevation_beams = num_elevation_beams
-
+        self.azimuth_setting_percent = azimuth_setting_percent
+        self.hfov_deg = hfov_deg 
         self.samp_per_channel = samp_per_channel
         self.buffer_m = buffer_m
         
         # Sensor FOV parameters
-        self.hfov_rad = np.radians(45.0)  # 45° horizontal FOV
-        self.vfov_rad = np.radians(22.5)  # 22.5° vertical FOV
+
+        self.hfov_rad = np.radians(self.hfov_deg)  # horizontal FOV  is variable
+        self.vfov_rad = np.radians(22.5)  # 22.5° vertical FOV is fixed
         self.theta0 = 0.0  # Uncalibrated center elevation angle (radians)
-        self.azimuth_res_rad = np.radians(45) / (num_azimuth_beams - 1)
-        self.elevation_res_rad = np.radians(22.5) / (num_elevation_beams - 1)
-        # Gimbal calibration offsets (will be set manually for each distance test)
-        self.gimbal_h_offset_rad = 0.0
+        self.azimuth_res_rad = self.hfov_rad / (num_azimuth_beams - 1)
+        self.elevation_res_rad = self.vfov_rad / (num_elevation_beams - 1)
+        # Gimbal calibration vertical offset (will be set manually for each distance test)
+        self.gimbal_h_offset_rad = np.radians(self.azimuth_setting_percent * self.hfov_deg)
         self.gimbal_v_offset_rad = 0.0
 
     def _angular_limits(self):
@@ -54,11 +57,9 @@ class Test_Setup:
         dtheta_calib = angle_to_top - (self.theta0 + theta_half) - np.arctan(self.buffer_m / self.distance_m)
         return 0.0, dtheta_calib # Horizontal offset is zero for this setup
    
-    def set_calibration(self, calib_offset):
+    def set_vert_calibration(self, calib_v_offset_deg):
         """Set gimbal calibration offsets in radians."""
-        dphi_calib, dtheta_calib = calib_offset # Unpack calib_offset tuple
-        self.gimbal_h_offset_rad = dphi_calib
-        self.gimbal_v_offset_rad = dtheta_calib
+        self.gimbal_v_offset_rad = np.radians(calib_v_offset_deg)
 
     def get_v_calibration(self):
         """Get current vertical gimbal calibration offset in radians."""
@@ -316,7 +317,6 @@ if(__name__ == "__main__"):
         target_height_m = 1.3,
         distance_m = 100,
         sensor_height_offset_m = 0.0,
-        sensor_width_offset_m = 0.0,
         num_azimuth_beams = 181,
         num_elevation_beams = 128,
         samp_per_channel = 400,

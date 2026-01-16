@@ -92,7 +92,6 @@ for distance_m in test_distances:
         target_height_m=1.3,
         distance_m=distance_m,
         sensor_height_offset_m=0.0,
-        sensor_width_offset_m=0.0,
         num_azimuth_beams=181,
         num_elevation_beams=128,
         samp_per_channel=5000,
